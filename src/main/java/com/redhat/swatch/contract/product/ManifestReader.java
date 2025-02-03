@@ -81,7 +81,7 @@ public class ManifestReader {
 
         HashMap<Object, Object> product = new HashMap<Object, Object>();
         JsonObject pool = jsonObject.getJsonObject("pool");
-        int quantity = pool.getInt("quantity", 0);
+        int quantity = pool.getInt("exported", 0);
         product.put("productId", pool.getString("productId"));
         product.put("productName", pool.getString("productName"));
         product.put("quantity", quantity);
