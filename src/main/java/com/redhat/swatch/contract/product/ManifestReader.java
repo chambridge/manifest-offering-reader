@@ -4,10 +4,13 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.zip.*;
-import javax.json.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 
 public class ManifestReader {
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
     public static void main(String[] args) {
         if (args.length < 1) {
             System.out.println("Usage: java ManifestReader <zip-file-path>");
@@ -65,7 +68,7 @@ public class ManifestReader {
     private static HashMap<Object, Object> processEntitlementforCapacity(InputStream entitlementsStream, String fileName, long size) {
         System.out.println("Processing JSON file: " + fileName);
         StringBuilder builder = new StringBuilder();
-        JsonObject jsonObject = null;
+        JsonNode jsonObject = null;
         try(BufferedReader reader = new BufferedReader(new InputStreamReader(entitlementsStream))) {
             String line;
             while((line = reader.readLine()) != null) {
@@ -75,72 +78,67 @@ public class ManifestReader {
             e.printStackTrace();
         }
         String result = builder.toString().trim();
-        try(JsonReader reader = Json.createReader(new StringReader(result))) {
-            jsonObject = reader.readObject();
+        try {
+            jsonObject = objectMapper.readTree(result);
+        } catch(IOException e) {
+            jsonObject = null;
         }
 
         HashMap<Object, Object> product = new HashMap<Object, Object>();
-        JsonObject pool = jsonObject.getJsonObject("pool");
-        int quantity = pool.getInt("exported", 0);
-        product.put("productId", pool.getString("productId"));
-        product.put("productName", pool.getString("productName"));
+
+        JsonNode pool = jsonObject.get("pool");
+        int quantity = pool.get("exported").intValue();
+        product.put("productId", pool.get("productId").asText());
+        product.put("productName", pool.get("productName").asText());
         product.put("quantity", quantity);
-        JsonArray productAttributes = pool.getJsonArray("productAttributes");
-        Iterator<JsonValue> productAttributesIter = productAttributes.iterator();
-        while(productAttributesIter.hasNext()) {
-            JsonValue productAttr = productAttributesIter.next();
-            JsonObject productAttrObject = null;
-            try(JsonReader reader = Json.createReader(new StringReader(productAttr.toString()))) {
-                productAttrObject = reader.readObject();
-            }
-            String productAttrName = productAttrObject.getString("name");
-            switch (productAttrName) {
-                case "role":
-                    product.put("role", productAttrObject.getString("value"));
-                    break;
-                case "description":
-                    product.put("description", productAttrObject.getString("value"));
-                    break;
-                case "usage":
-                    product.put("usage", productAttrObject.getString("value"));
-                    break;
-                case "service_type":
-                    product.put("service_type", productAttrObject.getString("value"));
-                    break;
-                case "product_family":
-                    product.put("product_family", productAttrObject.getString("value"));
-                    break;
-                case "sockets":
-                    int sockets = 0;
-                    String socketsStr = productAttrObject.getString("value");
-                    try {                    
-                        sockets = Integer.parseInt(socketsStr);
-                    } catch (NumberFormatException e) {
-                        sockets = 0;
-                    }
-                    product.put("sockets", new Integer(sockets * quantity));
-                    break;
-                case "cores":
-                    int cores = 0;
-                    String coresStr = productAttrObject.getString("value");
-                    try {                    
-                        cores = Integer.parseInt(coresStr);
-                    } catch (NumberFormatException e) {
-                        cores = 0;
-                    }
-                    product.put("cores", new Integer(cores * quantity));
-                    break;
-                case "support_type":
-                    String support = productAttrObject.getString("value");
-                    product.put("L1", new Boolean(support.contains("L1")));
-                    product.put("L2", new Boolean(support.contains("L1-L3") || support.contains("L2")));
-                    break;
-                default:
-                    break;
+        JsonNode productAttributes = pool.get("productAttributes");
+        if (productAttributes != null && productAttributes.isArray()) {
+            for (JsonNode productAttrObject: productAttributes) {
+                String productAttrName = productAttrObject.get("name").asText();
+                switch (productAttrName) {
+                    case "role":
+                        product.put("role", productAttrObject.get("value").asText());
+                        break;
+                    case "description":
+                        product.put("description", productAttrObject.get("value").asText());
+                        break;
+                    case "usage":
+                        product.put("usage", productAttrObject.get("value").asText());
+                        break;
+                    case "service_type":
+                        product.put("service_type", productAttrObject.get("value").asText());
+                        break;
+                    case "product_family":
+                        product.put("product_family", productAttrObject.get("value").asText());
+                        break;
+                    case "sockets":
+                        int sockets = 0;
+                        try {                    
+                            sockets = productAttrObject.get("value").intValue();
+                        } catch (NumberFormatException e) {
+                            sockets = 0;
+                        }
+                        product.put("sockets", new Integer(sockets * quantity));
+                        break;
+                    case "cores":
+                        int cores = 0;
+                        try {                    
+                            cores = productAttrObject.get("value").intValue();
+                        } catch (NumberFormatException e) {
+                            cores = 0;
+                        }
+                        product.put("cores", new Integer(cores * quantity));
+                        break;
+                    case "support_type":
+                        String support = productAttrObject.get("value").asText();
+                        product.put("L1", new Boolean(support.contains("L1")));
+                        product.put("L2", new Boolean(support.contains("L1-L3") || support.contains("L2")));
+                        break;
+                    default:
+                        break;
+                }
             }
         }
-
-        //System.out.println(product);
         return product;
     }
 }
